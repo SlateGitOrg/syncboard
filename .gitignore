@@ -1,0 +1,32 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# Yjs / IndexedDB dev artifacts (browser-side only, nothing to ignore here,
+# kept for clarity if a future contributor adds local dump tooling)
+*.ydoc

@@ -1,0 +1,13 @@
+# Convenience compose file for running the relay locally.
+# Usage: docker compose up --build
+# Then run the frontend separately with `npm run dev` (VITE_RELAY_URL
+# defaults to ws://localhost:1234, matching the port mapped below).
+services:
+  relay:
+    build: .
+    ports:
+      - '1234:1234'
+    environment:
+      - PORT=1234
+      - HOST=0.0.0.0
+    restart: unless-stopped
