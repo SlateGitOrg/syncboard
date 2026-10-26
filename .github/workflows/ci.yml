@@ -27,12 +27,8 @@ jobs:
         run: npm test -- --reporter=verbose
 
   e2e:
-    name: E2E tests (optional, offline/online transition)
+    name: E2E tests (offline/online transition)
     runs-on: ubuntu-latest
-    # Non-blocking: this suite spins up a real relay + real browser and is
-    # slower/flakier than the unit suite above, which is the required
-    # gate. Flip to `false` once you've watched it go green a few times.
-    continue-on-error: true
     needs: build-and-test
     steps:
       - uses: actions/checkout@v4

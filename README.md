@@ -13,9 +13,9 @@ teammate's change when two people touch the same card while partitioned. SyncBoa
 silently dropped, including when two users edit the same card offline and reconnect at
 the same time.
 
-Merging is done by [Yjs](https://docs.yjs.dev/); this project does not implement its own
-CRDT. The work here is the wiring around it: the document schema, the IndexedDB-backed
-offline queue, the browser-online-aware reconnect state machine, awareness-based live
+Merging is done by [Yjs](https://docs.yjs.dev/); SyncBoard does not implement its own
+CRDT. What it adds on top is the document schema, an IndexedDB-backed offline queue, a
+reconnect state machine that follows the browser's online status, awareness-based live
 cursors, and a conflict-resolution test suite that checks convergence under a simulated
 split-brain.
 
@@ -46,7 +46,7 @@ flowchart LR
     DocA <-->|"WebSocket<br/>(CRDT updates +<br/>awareness/cursors)"| Relay["y-websocket relay<br/>(Dockerized, stateless)"]
     Relay <-->|"WebSocket"| DocB
 
-    subgraph Partition["Simulated network-partition test branch"]
+    subgraph Partition["Offline edit and reconnect path"]
         Offline["Edits queue in IndexedDB<br/>while relay is unreachable"] --> Reconnect["Reconnect: exchange<br/>Yjs state vectors"]
         Reconnect --> Merge["Deterministic Yjs merge<br/>(no data loss)"]
     end
@@ -98,7 +98,7 @@ edits merge into the other tab with zero data loss.
 ```bash
 npm test          # Vitest unit + conflict-resolution suite (32 tests; no network, no Docker)
 npm run build     # tsc --noEmit + production build
-npm run e2e       # Playwright E2E — needs `npx playwright install chromium`
+npm run e2e       # Playwright E2E (a required CI job) — needs `npx playwright install chromium`
                   # and spins up a real relay + real dev server (see playwright.config.ts)
 ```
 
@@ -154,7 +154,8 @@ state machine is unit-tested with a fake transport — no real socket required.
 
 ### Live cursors (`src/hooks/useCursorBroadcast.ts`, `src/components/Cursors.tsx`)
 
-Built on Yjs **awareness** (`y-protocols/awareness`, wired in via `y-websocket`), which
+Cursor positions are coalesced to at most one awareness update per animation frame
+(`requestAnimationFrame`), so mouse movement doesn't flood the relay. Built on Yjs **awareness** (`y-protocols/awareness`, wired in via `y-websocket`), which
 is deliberately a separate channel from the CRDT document: awareness state (cursor
 position, presence) is ephemeral and re-broadcast on connect, never persisted and never
 merged into document history — which matches the semantics wanted for "is this person still
@@ -185,12 +186,12 @@ src/
     __tests__/                   unit tests for both, no network/browser required
   hooks/
     useBoard.ts                  assembles doc + persistence + relay + awareness
-    useCursorBroadcast.ts        throttled mouse -> awareness broadcaster
+    useCursorBroadcast.ts        mouse -> awareness broadcaster (one update per animation frame)
   components/                    Board, Column, CardItem, Cursors, ConnectionBanner
   server/
     relay.ts                     the y-websocket relay (Dockerized)
 e2e/
-  offline-online.spec.ts         real two-browser-context partition/reconnect proof
+  offline-online.spec.ts         two-browser-context partition/reconnect test (Playwright)
 ```
 
 ## Limitations

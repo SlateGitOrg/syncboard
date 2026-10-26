@@ -2,18 +2,15 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * E2E config for the offline/online transition spec. This suite is
- * intentionally NOT part of `npm test` (which only runs Vitest unit
- * tests) — it needs real browser binaries (`npx playwright install`)
- * plus a live Vite dev server AND a live relay process, none of which
- * are guaranteed to be available in a sandboxed CI/verification
- * environment. Run it explicitly with `npm run e2e` once
- * `npx playwright install chromium` has been run locally.
+ * separate from `npm test` (Vitest only): it needs a Chromium binary
+ * (`npx playwright install chromium`) plus a live Vite dev server and a
+ * live relay, which the config starts itself. CI runs it as a required job.
  */
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   fullyParallel: false,
-  retries: 0,
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: {
     baseURL: 'http://localhost:5173',
