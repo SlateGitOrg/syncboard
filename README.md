@@ -1,40 +1,33 @@
 # SyncBoard
 
-**A kanban board that never loses an edit — even when the network doesn't cooperate.**
+**An offline-first, real-time kanban board where concurrent edits converge instead of being overwritten.**
 
-![syncboard](assets/hero.png)
+[![CI](https://github.com/SlateGitOrg/syncboard/actions/workflows/ci.yml/badge.svg)](https://github.com/SlateGitOrg/syncboard/actions/workflows/ci.yml)
 
-## The real problem
+## Why
 
-Distributed teams run their day-to-day work through tools like Trello and Linear over
-connections that are flaky by nature — spotty office wifi, tunnels, transatlantic
-flights, a laptop that sleeps mid-edit. Most of those tools handle a dropped connection
-in one of two bad ways: they silently lose the edits you made while offline, or they
-resolve conflicts with last-write-wins, which quietly throws away a teammate's change
-the instant two people touch the same card while partitioned from each other.
+Most collaborative boards handle a dropped connection badly: they either lose the edits
+made while offline, or resolve conflicts last-write-wins, which silently discards a
+teammate's change when two people touch the same card while partitioned. SyncBoard uses
+**Yjs CRDTs** so concurrent edits merge deterministically on every replica and nothing is
+silently dropped, including when two users edit the same card offline and reconnect at
+the same time.
 
-Teams building their own internal tools or B2B SaaS need a proven pattern for real-time
-collaboration that survives this — not a toy demo, something that can actually be
-defended in a design review: what happens when two users edit the same card while both
-are offline, and then both come back online at the same time?
+Merging is done by [Yjs](https://docs.yjs.dev/); this project does not implement its own
+CRDT. The work here is the wiring around it: the document schema, the IndexedDB-backed
+offline queue, the browser-online-aware reconnect state machine, awareness-based live
+cursors, and a conflict-resolution test suite that checks convergence under a simulated
+split-brain.
 
-SyncBoard is a working answer to that question: a drag-and-drop kanban board with live
-multi-user cursors and full offline support, where **Yjs CRDTs**, not hand-rolled merge
-logic, guarantee that concurrent edits converge deterministically and nothing is ever
-silently dropped.
+## Features
 
-> **Attribution note, on purpose:** the conflict-free merging in this project is done by
-> [Yjs](https://docs.yjs.dev/), a mature, widely-used CRDT library — this project does
-> not implement its own CRDT algorithm. The engineering work here, and the part worth
-> discussing in an interview, is the **sync/offline/partition wiring around Yjs**: the
-> document schema design (why cards use `Y.Text` for titles, why column membership is
-> derived from a single source-of-truth field instead of trusted from an array), the
-> IndexedDB-backed offline queue, the browser-online-aware reconnect state machine, the
-> awareness-based live cursors, and the conflict-resolution test suite that proves the
-> no-data-loss property under a simulated split-brain. Understanding Yjs's update model
-> (binary CRDT deltas + state-vector diffing) and its awareness protocol (ephemeral,
-> never-persisted presence state) well enough to wire all of that together correctly is
-> the actual skill being demonstrated.
+- Drag-and-drop kanban board (columns and cards) where every drag is a CRDT mutation.
+- Full offline support: edits are applied locally and persisted to IndexedDB immediately.
+- Real-time multi-user sync through a small stateless `y-websocket` relay.
+- Live multi-user cursors via Yjs awareness (ephemeral, never persisted).
+- Reconnect state machine that distinguishes `offline` from `disconnected` and reconnects as soon as the browser is back online.
+- In-app "Simulate network partition" / "Simulate reconnect" controls for demos.
+- Dockerized relay, unit/conflict-resolution tests, and a Playwright offline/online E2E test.
 
 ## Architecture
 
@@ -79,7 +72,7 @@ The offline → reconnect → merge path, concretely:
 
 ## Quick start
 
-Requires Node 22+.
+Prerequisites: Node 22+ and npm.
 
 ```bash
 npm install
@@ -100,10 +93,10 @@ that tab (via the app's own connection manager, independent of your real network
 edit the board while it's "offline", then click **"Simulate reconnect"** and watch the
 edits merge into the other tab with zero data loss.
 
-### Testing
+## Testing
 
 ```bash
-npm test          # Vitest unit + conflict-resolution suite (no network, no Docker)
+npm test          # Vitest unit + conflict-resolution suite (32 tests; no network, no Docker)
 npm run build     # tsc --noEmit + production build
 npm run e2e       # Playwright E2E — needs `npx playwright install chromium`
                   # and spins up a real relay + real dev server (see playwright.config.ts)
@@ -130,7 +123,7 @@ Y.Doc
 
 `cardIds` arrays are treated as an **ordering hint**, not the source of truth for
 column membership — `card.columnId` is. This is the one non-obvious design decision in
-the whole project, and it exists to fix a real bug I hit while building this: if two
+the project, and it exists to fix a real bug found during development: if two
 replicas concurrently move the *same* card into two *different* columns while
 partitioned, each removes the card from the shared source array (fine, that converges)
 but inserts it into its *own* destination array — two different `Y.Array` instances, so
@@ -164,7 +157,7 @@ state machine is unit-tested with a fake transport — no real socket required.
 Built on Yjs **awareness** (`y-protocols/awareness`, wired in via `y-websocket`), which
 is deliberately a separate channel from the CRDT document: awareness state (cursor
 position, presence) is ephemeral and re-broadcast on connect, never persisted and never
-merged into document history — exactly the semantics you want for "is this person still
+merged into document history — which matches the semantics wanted for "is this person still
 here" instead of "what did they type."
 
 ### Drag-and-drop kanban UI (`src/components/`)
@@ -173,7 +166,7 @@ Native HTML5 drag-and-drop (no DnD dependency) driving `BoardStore.moveCard`, so
 drag operation is a real CRDT mutation, replicated and persisted the same way a typed
 edit is.
 
-## Project structure
+## Project layout
 
 ```
 src/
@@ -184,7 +177,7 @@ src/
     connection.ts                relay wiring (WebsocketProvider + awareness)
     __tests__/
       boardStore.test.ts        CRUD behavior of the schema
-      partition.test.ts          conflict-resolution / split-brain suite (the core proof)
+      partition.test.ts          conflict-resolution / split-brain suite
       persistence.test.ts        IndexedDB durability, using fake-indexeddb
   lib/
     textDelta.ts                 minimal-diff binder for plain strings <-> Y.Text
@@ -200,7 +193,7 @@ e2e/
   offline-online.spec.ts         real two-browser-context partition/reconnect proof
 ```
 
-## Known limitations (honest, not hidden)
+## Limitations
 
 - **Field-level edits are last-writer-wins**, deterministically ordered by Yjs, not
   merged semantically. Concurrent edits to the *same* character range of a title (rather
@@ -216,3 +209,7 @@ e2e/
   of a board that no client has open would need a persistence-enabled relay (Yjs
   supports this via `y-leveldb`/`y-redis` persistence adapters) — out of scope here by
   design, since every client already persists its own full copy.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
